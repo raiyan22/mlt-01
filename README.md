@@ -1,5 +1,5 @@
 
-# mlt-01
+# task 2 
 
 ## Overview
 This project is a lightweight browser-based face-tracking AR demo built with **MindAR** and **A-Frame**. It overlays a 3D model (cowboy hat) on the user’s face and allows real-time adjustments via keyboard controls.
