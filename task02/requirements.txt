@@ -1,0 +1,11 @@
+torch
+torchvision
+numpy<2.0
+trimesh
+tqdm
+Pillow
+pyyaml
+filelock
+networkx
+ipywidgets
+git+https://github.com/openai/shap-e.git
