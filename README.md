@@ -56,3 +56,36 @@ We ensure `cowboy_hat.glb` is in the same directory as `index.html`
 
 Performance Optimization
 FPS monitor can be Implemented to dynamically adjust model detail if performance drops.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+To: career@coderex.co Subject: ML Engineer Task Submission - [Your Name]
+
+Body:
+
+Dear Hiring Team,
+
+Please find attached my submission for the Machine Learning Engineer task (Task 1: 2D → 3D Generation).
+
+GitHub Repository: [Insert Your GitHub Link Here]
+
+Summary of Approach: I implemented a pipeline using the TripoSR architecture due to its state-of-the-art performance in feed-forward 3D reconstruction.
+
+Engineering: Wrapped the logic in a modular Python class with argparse CLI support for easy local execution. Robustness: Integrated rembg (U-2-Net) for automatic background removal, ensuring the model handles raw user photos correctly without noise artifacts. Deliverables: The repository contains the source code, a requirements.txt for reproducibility, and a sample .glb output. I have also included an improvement proposal in the README regarding Multi-View Consistency (using Zero123++) and Texture Refinement.
+
+Thank you for your time and consideration.
+
+Best regards,
+
+[Your Name] [Your Phone Number] [Your LinkedIn Profile]
