@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Precision AR Aligner (Centered)</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-aframe.prod.js"></script>
+
+    <style>
+        body { 
+            margin: 0; 
+            font-family: monospace; 
+            background-color: #222; 
+            color: white;
+            
+            /* CENTER THE LAYOUT */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* MAIN AR WIDGET */
+        #ar-container {
+            position: relative; 
+            width: 320px; 
+            height: 240px;
+            background: #000; 
+            border: 4px solid #555; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            z-index: 9999;
+            outline: none; /* Remove blue border when focused */
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+        
+        /* Force video to stay in box */
+        #ar-container video, #ar-container canvas {
+            width: 100% !important; height: 100% !important; position: absolute !important;
+            top: 0 !important; left: 0 !important; margin: 0 !important; object-fit: cover !important;
+        }
+
+        /* OVERLAYS */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; padding: 5px;
+            pointer-events: none; z-index: 1000; background: rgba(0,0,0,0.5);
+        }
+        #debug-console { font-size: 11px; color: #0f0; font-weight: bold; text-shadow: 1px 1px 0 #000; }
+        
+        /* START BUTTON */
+        #start-btn {
+            position: absolute; bottom: 50%; left: 50%; transform: translate(-50%, 50%);
+            padding: 10px 20px; background: #2196F3; color: white; border: none; cursor: pointer; z-index: 1001;
+            font-weight: bold; border-radius: 4px;
+        }
+
+        /* HELP BOX */
+        .help-box { 
+            padding: 20px; 
+            font-family: sans-serif; 
+            max-width: 600px; 
+            text-align: center; 
+            margin-bottom: 10px; 
+        }
+        .key { background: #444; padding: 2px 6px; border-radius: 3px; border: 1px solid #666; font-weight: bold; color: #fff; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div class="help-box">
+        <h2>Alignment Controller</h2>
+        <p><strong>Instructions:</strong> Click "START", then <strong>CLICK THE CAMERA BOX</strong> to ensure keys work.</p>
+        <p style="font-size: 12px; color: #aaa;">
+            <span class="key">Arrows</span> Move 
+            | <span class="key">W</span><span class="key">S</span> Depth 
+            | <span class="key">Q</span><span class="key">E</span> Tilt 
+            | <span class="key">+</span><span class="key">-</span> Size
+            <br><br>
+            <span class="key" style="color: yellow">R</span> / <span class="key" style="color: yellow">T</span> = <strong>PRESETS</strong>
+            | <span class="key" style="color: cyan">SHIFT + KEY</span> = <strong>TURBO</strong>
+            | <span class="key" style="color: lime">ENTER</span> = <strong>PRINT CODE</strong>
+        </p>
+    </div>
+
+    <!-- Added tabindex="0" to make this DIV capable of receiving keyboard focus -->
+    <div id="ar-container" tabindex="0">
+        <div id="overlay"><div id="debug-console">Waiting to Start...</div></div>
+        <button id="start-btn">START CAMERA</button>
+
+        <a-scene mindar-face="uiScanning: #no-ui" embedded color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+            <a-assets>
+                <a-asset-item id="hatModel" src="./cowboy_hat.glb"></a-asset-item>
+            </a-assets>
+
+            <!-- DISABLE A-FRAME CONTROLS so they don't hijack your keys -->
+            <a-camera active="false" position="0 0 0" look-controls-enabled="false" wasd-controls-enabled="false"></a-camera>
+            
+            <a-light type="ambient" intensity="1.2"></a-light>
+            <a-light type="directional" position="0 0 1" intensity="0.8"></a-light>
+
+            <a-entity mindar-face-target="anchorIndex: 168">
+                
+                <!-- RED REFERENCE DOT -->
+                <a-sphere color="red" radius="0.01" position="0 0 0"></a-sphere>
+                
+                <!-- THE HAT -->
+                <a-entity 
+                    id="hat-entity"
+                    gltf-model="#hatModel" 
+                    rotation="0 -90 0" 
+                    position="0 -0.5 -0.5" 
+                    scale="0.35 0.35 0.35">
+                </a-entity>
+
+            </a-entity>
+        </a-scene>
+    </div>
+    <div id="no-ui" class="hidden"></div>
+
+    <script>
+        const scene = document.querySelector('a-scene');
+        const startBtn = document.getElementById('start-btn');
+        const consoleText = document.getElementById('debug-console');
+        const container = document.getElementById('ar-container');
+
+        // STARTING VALUES
+        let config = {
+            x: 0, y: -0.5, z: -0.5,
+            rx: 0, ry: -90, rz: 0,
+            scale: 0.35
+        };
+
+        function updateHat(lastKey = "") {
+            const hat = document.getElementById('hat-entity');
+            if (!hat) return;
+            
+            hat.setAttribute('position', `${config.x.toFixed(3)} ${config.y.toFixed(3)} ${config.z.toFixed(3)}`);
+            hat.setAttribute('rotation', `${config.rx} ${config.ry} ${config.rz}`);
+            hat.setAttribute('scale', `${config.scale.toFixed(3)} ${config.scale.toFixed(3)} ${config.scale.toFixed(3)}`);
+            
+            // Update text on screen
+            consoleText.innerHTML = `KEY: ${lastKey}<br>POS: ${config.x.toFixed(3)} ${config.y.toFixed(3)} ${config.z.toFixed(3)}<br>ROT: ${config.rx} ${config.ry} ${config.rz}<br>SCL: ${config.scale.toFixed(3)}`;
+        }
+
+        // LISTEN FOR KEYS ON THE WINDOW
+        window.addEventListener('keydown', (e) => {
+            
+            // Define Speed: Normal vs Turbo (Shift Key)
+            const multiplier = e.shiftKey ? 5 : 1;
+            const STEP_POS = 0.005 * multiplier; 
+            const STEP_ROT = 2 * multiplier; 
+            const STEP_SCALE = 0.005 * multiplier;
+
+            // Prevent scrolling for arrow keys
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", " "].includes(e.code)) {
+                e.preventDefault();
+            }
+
+            let changed = true;
+
+            switch(e.key) {
+                case "ArrowUp":    config.y += STEP_POS; break;
+                case "ArrowDown":  config.y -= STEP_POS; break;
+                case "ArrowLeft":  config.x -= STEP_POS; break;
+                case "ArrowRight": config.x += STEP_POS; break;
+                
+                case "w": case "W": config.z -= STEP_POS; break; // In
+                case "s": case "S": config.z += STEP_POS; break; // Out
+                
+                case "q": case "Q": config.rx -= STEP_ROT; break; // Tilt Fwd
+                case "e": case "E": config.rx += STEP_ROT; break; // Tilt Back
+                
+                case "a": case "A": config.ry -= STEP_ROT; break; // Spin Left
+                case "d": case "D": config.ry += STEP_ROT; break; // Spin Right
+                
+                case "+": case "=": config.scale += STEP_SCALE; break;
+                case "-": case "_": config.scale -= STEP_SCALE; break;
+                
+                // PRESET 1
+                case "r": case "R": 
+                    config.x = 0.000; config.y = -0.430; config.z = -1.950;
+                    config.rx = 0; config.ry = 0; config.rz = 0;
+                    config.scale = 0.350;
+                    break;
+
+                // PRESET 2 (NEW)
+                case "t": case "T":
+                    config.x = -0.070;
+                    config.y = -0.585;
+                    config.z = -1.950;
+                    config.rx = 0;
+                    config.ry = 4;
+                    config.rz = 0;
+                    config.scale = 0.390;
+                    break;
+
+                case "Enter":
+                    printCode();
+                    changed = false;
+                    break;
+                default:
+                    changed = false;
+            }
+
+            if(changed) updateHat(e.key);
+        });
+
+        function printCode() {
+            const code = `
+<a-entity 
+    gltf-model="#hatModel" 
+    position="${config.x.toFixed(3)} ${config.y.toFixed(3)} ${config.z.toFixed(3)}" 
+    rotation="${config.rx} ${config.ry} ${config.rz}" 
+    scale="${config.scale.toFixed(3)} ${config.scale.toFixed(3)} ${config.scale.toFixed(3)}">
+</a-entity>`;
+            console.log("%c COPY THE CODE BELOW:", "color: #0f0; font-size: 14px; font-weight: bold");
+            console.log(code);
+            alert("Code printed to Console (F12). Check the 'Console' tab.");
+        }
+
+        startBtn.addEventListener('click', () => {
+            startBtn.classList.add('hidden');
+            scene.systems['mindar-face'].start();
+            container.focus();
+            updateHat("START");
+        });
+
+        scene.addEventListener("arReady", () => {
+            const video = document.querySelector('video');
+            if (video) {
+                container.appendChild(video); 
+                video.style.zIndex = "-2";
+            }
+        });
+    </script>
+</body>
+</html>
+
+<!-- https://www.techlandbd.com/eweadn-c65-v2-mechanical-keyboard
+
+https://www.techlandbd.com/eweadn-c65-v2-tri-mode-keyboard
+
+https://www.techlandbd.com/ajazz-ak680-wireless-gaming-keyboard
+
+https://www.techlandbd.com/ajazz-ak680-gaming-keyboard
+
+https://www.techlandbd.com/redragon-k644-se-rgb-wired-mechnical-keyboard -->

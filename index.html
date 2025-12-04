@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task 2: Interactive AR Demo</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-aframe.prod.js"></script>
+
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #1a1a1a; 
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 1. THE CONTAINER (640x480) */
+        #ar-container {
+            position: relative; 
+            width: 640px;       
+            height: 480px;      
+            background: #000; 
+            border: 4px solid #444; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            outline: none;
+        }
+
+        /* 2. CONTROLS TEXT */
+        h5 {
+            margin-top: 15px;
+            font-weight: normal;
+            color: #888;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+        }
+        .key { color: #ccc; font-weight: bold; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+        
+        /* 3. LAYER ORDERING */
+        #ar-container video {
+            position: absolute !important; top: 0; left: 0;
+            width: 100% !important; height: 100% !important;
+            object-fit: cover !important; z-index: 1 !important;
+        }
+        #ar-container canvas.a-canvas {
+            position: absolute !important; top: 0; left: 0;
+            width: 100% !important; height: 100% !important;
+            z-index: 10 !important;
+        }
+        #loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 999; transition: opacity 0.5s; text-align: center;
+        }
+        
+        /* UI STYLING */
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #333; border-top: 4px solid #00d2ff; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status-text { font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #eee;}
+        
+        #start-btn {
+            padding: 10px 25px; background: #00d2ff; color: #000; 
+            border: none; border-radius: 4px; cursor: pointer; 
+            font-weight: bold; font-size: 14px; margin-top: 15px;
+            text-transform: uppercase;
+        }
+        #start-btn:hover { background: #00aacc; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- AR Container -->
+    <div id="ar-container" tabindex="0">
+        
+        <div id="loading-overlay">
+            <div class="spinner" id="spinner"></div>
+            <div class="status-text" id="status-text">Initializing...</div>
+            <button id="start-btn" class="hidden">Start Camera</button>
+        </div>
+
+        <a-scene mindar-face="uiScanning: #no-ui" embedded color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+            <a-assets>
+                <a-asset-item id="hatModel" src="./cowboy_hat.glb"></a-asset-item>
+            </a-assets>
+
+            <a-camera active="false" position="0 0 0"></a-camera>
+            <a-light type="ambient" intensity="1.0"></a-light>
+            <a-light type="directional" position="0 0 1" intensity="0.8"></a-light>
+
+            <a-entity mindar-face-target="anchorIndex: 168">
+                <a-entity 
+                    id="hat-entity"
+                    gltf-model="#hatModel" 
+                    position="-0.070 -0.585 -1.950" 
+                    rotation="0 4 0" 
+                    scale="0.390 0.390 0.390">
+                </a-entity>
+            </a-entity>
+        </a-scene>
+    </div>
+
+    <!-- Minimal Controls Text -->
+    <h5>
+        <span class="key">ARROWS</span> Move &nbsp;|&nbsp; 
+        <span class="key">W</span><span class="key">S</span> Depth &nbsp;|&nbsp; 
+        <span class="key">Q</span><span class="key">E</span> Tilt &nbsp;|&nbsp; 
+        <span class="key">+</span><span class="key">-</span> Size &nbsp;|&nbsp; 
+        <span class="key">R</span> Reset &nbsp;|&nbsp; 
+        <span class="key">T</span> Custom &nbsp;|&nbsp; 
+        <span class="key">ENTER</span> Save
+    </h5>
+
+    <div id="no-ui" class="hidden"></div>
+
+    <script>
+        const scene = document.querySelector('a-scene');
+        const overlay = document.getElementById('loading-overlay');
+        const statusText = document.getElementById('status-text');
+        const startBtn = document.getElementById('start-btn');
+        const spinner = document.getElementById('spinner');
+        const container = document.getElementById('ar-container');
+
+        // Initial Config (Matches your specific T preset)
+        let config = { 
+            x: -0.070, y: -0.585, z: -1.950, 
+            rx: 0, ry: 4, rz: 0, 
+            scale: 0.390 
+        };
+
+        // --- KEYBOARD LOGIC ---
+        window.addEventListener('keydown', (e) => {
+            // Speed multiplier (Shift = Fast)
+            const multiplier = e.shiftKey ? 5 : 1;
+            const STEP_POS = 0.005 * multiplier; 
+            const STEP_ROT = 2 * multiplier; 
+            const STEP_SCALE = 0.005 * multiplier;
+            
+            // Prevent scrolling with arrows
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
+
+            let changed = true;
+
+            switch(e.key) {
+                // Position
+                case "ArrowUp":    config.y += STEP_POS; break;
+                case "ArrowDown":  config.y -= STEP_POS; break;
+                case "ArrowLeft":  config.x -= STEP_POS; break;
+                case "ArrowRight": config.x += STEP_POS; break;
+                case "w": case "W": config.z -= STEP_POS; break;
+                case "s": case "S": config.z += STEP_POS; break;
+                
+                // Rotation
+                case "q": case "Q": config.rx -= STEP_ROT; break;
+                case "e": case "E": config.rx += STEP_ROT; break;
+                case "a": case "A": config.ry -= STEP_ROT; break;
+                case "d": case "D": config.ry += STEP_ROT; break;
+                
+                // Scale
+                case "+": case "=": config.scale += STEP_SCALE; break;
+                case "-": case "_": config.scale -= STEP_SCALE; break;
+                
+                // PRESET R (Default/Reset)
+                case "r": case "R": 
+                    config.x = 0; config.y = -0.5; config.z = -0.5; 
+                    config.rx = 0; config.ry = -90; config.rz = 0; 
+                    config.scale = 0.35; 
+                    console.log("Preset R Applied");
+                    break;
+
+                // PRESET T (Your Custom Fit)
+                case "t": case "T": 
+                    config.x = -0.070; config.y = -0.585; config.z = -1.950; 
+                    config.rx = 0; config.ry = 4; config.rz = 0; 
+                    config.scale = 0.390; 
+                    console.log("Preset T Applied");
+                    break;
+
+                // Print Code
+                case "Enter": 
+                    console.log(`<a-entity gltf-model="#hatModel" position="${config.x.toFixed(3)} ${config.y.toFixed(3)} ${config.z.toFixed(3)}" rotation="${config.rx} ${config.ry} ${config.rz}" scale="${config.scale.toFixed(3)} ${config.scale.toFixed(3)} ${config.scale.toFixed(3)}"></a-entity>`);
+                    alert("Code printed to Console (F12)"); 
+                    changed = false; 
+                    break;
+                
+                default: 
+                    changed = false;
+            }
+
+            if(changed) updateHat();
+        });
+
+        function updateHat() {
+            const hat = document.getElementById('hat-entity');
+            if(hat) {
+                hat.setAttribute('position', `${config.x.toFixed(3)} ${config.y.toFixed(3)} ${config.z.toFixed(3)}`);
+                hat.setAttribute('rotation', `${config.rx} ${config.ry} ${config.rz}`);
+                hat.setAttribute('scale', `${config.scale.toFixed(3)} ${config.scale.toFixed(3)} ${config.scale.toFixed(3)}`);
+            }
+        }
+
+        // --- APP LIFECYCLE ---
+        scene.addEventListener('loaded', () => {
+            statusText.innerText = "System Ready";
+            spinner.classList.add('hidden');
+            startBtn.classList.remove('hidden');
+        });
+
+        startBtn.addEventListener('click', () => {
+            statusText.innerText = "Starting Camera...";
+            startBtn.classList.add('hidden');
+            spinner.classList.remove('hidden');
+            scene.systems['mindar-face'].start();
+            container.focus();
+        });
+
+        scene.addEventListener("arReady", () => {
+            statusText.innerText = "Tracking Face...";
+            const video = document.querySelector('video');
+            if (video) container.appendChild(video);
+            
+            setTimeout(() => {
+                overlay.style.opacity = 0;
+                setTimeout(() => { overlay.classList.add('hidden'); }, 500);
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
+
+<!-- the hat is not moving up when i press up arrow -->
